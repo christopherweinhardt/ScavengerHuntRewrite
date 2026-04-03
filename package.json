@@ -1,0 +1,22 @@
+{
+  "name": "scavenger-hunt-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "overrides": {
+    "expo-router": "55.0.10"
+  },
+  "scripts": {
+    "types:build": "npm run build -w @scavenger/types",
+    "server:dev": "npm run dev -w @scavenger/server",
+    "server:db:generate": "npm run db:generate -w @scavenger/server",
+    "server:db:migrate": "npm run db:migrate -w @scavenger/server",
+    "server:db:seed": "npm run db:seed -w @scavenger/server",
+    "mobile:start": "npm run start -w @scavenger/mobile"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0"
+  }
+}
