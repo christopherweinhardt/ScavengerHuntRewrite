@@ -4,6 +4,7 @@ dist/
 .expo-shared/
 *.log
 .env
+!apps/mobile/.env
 .env.local
 .DS_Store
 apps/mobile/ios/
