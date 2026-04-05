@@ -19,6 +19,19 @@ export function emitHuntMeta(io: HuntIo, huntId: string, hunt: HuntPublic) {
   io.to(roomForHunt(huntId)).emit("hunt:meta", hunt);
 }
 
+/** Tell clients to refresh completion state (approval, rejection). */
+export function emitCompletionStatus(
+  io: HuntIo,
+  huntId: string,
+  payload: {
+    teamId: string;
+    challengeId: string;
+    status: "approved" | "pending" | "none";
+  }
+) {
+  io.to(roomForHunt(huntId)).emit("completion:status", payload);
+}
+
 export function roomForHunt(huntId: string): string {
   return `hunt:${huntId}`;
 }

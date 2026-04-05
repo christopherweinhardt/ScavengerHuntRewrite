@@ -19,6 +19,13 @@ export const huntStatusEnum = pgEnum("hunt_status", [
 
 export const challengeTypeEnum = pgEnum("challenge_type", ["photo", "video"]);
 
+export const completionStatusEnum = pgEnum("completion_status", [
+  "pending",
+  "approved",
+]);
+
+export const pushPlatformEnum = pgEnum("push_platform", ["ios", "android"]);
+
 export const hunts = pgTable("hunts", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
@@ -72,6 +79,7 @@ export const completions = pgTable(
       .notNull()
       .references(() => challenges.id, { onDelete: "cascade" }),
     s3Key: text("s3_key").notNull(),
+    status: completionStatusEnum("status").notNull().default("pending"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   },
   (t) => ({
@@ -82,6 +90,16 @@ export const completions = pgTable(
   })
 );
 
+export const pushTokens = pgTable("push_tokens", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  teamId: uuid("team_id")
+    .notNull()
+    .references(() => teams.id, { onDelete: "cascade" }),
+  expoPushToken: text("expo_push_token").notNull().unique(),
+  platform: pushPlatformEnum("platform").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const huntsRelations = relations(hunts, ({ many }) => ({
   teams: many(teams),
   challenges: many(challenges),
@@ -90,6 +108,11 @@ export const huntsRelations = relations(hunts, ({ many }) => ({
 export const teamsRelations = relations(teams, ({ one, many }) => ({
   hunt: one(hunts, { fields: [teams.huntId], references: [hunts.id] }),
   completions: many(completions),
+  pushTokens: many(pushTokens),
+}));
+
+export const pushTokensRelations = relations(pushTokens, ({ one }) => ({
+  team: one(teams, { fields: [pushTokens.teamId], references: [teams.id] }),
 }));
 
 export const challengesRelations = relations(challenges, ({ one, many }) => ({

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import * as Session from "@/lib/session";
 import {
   View,
@@ -10,19 +10,16 @@ import {
   ActivityIndicator,
   ScrollView,
 } from "react-native";
-import { apiMeState } from "@/lib/api";
+import { apiMeState, unregisterDevicePushToken } from "@/lib/api";
+import { useHuntTimer, useNow } from "@/lib/huntTimer";
+import { useRedirectOnHuntLoadFailure } from "@/lib/useRedirectOnHuntLoadFailure";
 import { useHuntSocket } from "@/lib/useHuntSocket";
-
-function useNow(): number {
-  const [t, setT] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setT(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
-  return t;
-}
+import type { AppThemeColors } from "@/constants/Colors";
+import { useAppTheme } from "@/lib/useAppTheme";
 
 export default function LobbyScreen() {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const now = useNow();
   useHuntSocket(true);
 
@@ -37,38 +34,18 @@ export default function LobbyScreen() {
     queryFn: apiMeState,
   });
 
-  const timer = useMemo(() => {
-    if (!q.data) return null;
-    const start = new Date(q.data.hunt.startsAt).getTime();
-    const end = start + q.data.hunt.durationSeconds * 1000;
-    const fmt = (secRaw: number) => {
-      const sec = Math.max(0, secRaw);
-      const h = Math.floor(sec / 3600);
-      const m = Math.floor((sec % 3600) / 60);
-      const s = sec % 60;
-      return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
-    };
-    if (now >= end) return { kind: "ended" as const, label: "Time up" };
-    if (now < start) {
-      return {
-        kind: "untilStart" as const,
-        label: fmt(Math.floor((start - now) / 1000)),
-        start,
-        end,
-      };
-    }
-    return {
-      kind: "running" as const,
-      label: fmt(Math.floor((end - now) / 1000)),
-      start,
-      end,
-    };
-  }, [q.data, now]);
+  useRedirectOnHuntLoadFailure(q);
+
+  const timer = useHuntTimer(q.data?.hunt, now);
+
+  if (q.isError && q.data == null) {
+    return <View style={styles.centered} />;
+  }
 
   if (q.isLoading || !q.data) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#e94560" />
+        <ActivityIndicator size="large" color={colors.accent} />
         <Text style={styles.muted}>Loading hunt…</Text>
       </View>
     );
@@ -112,6 +89,7 @@ export default function LobbyScreen() {
       <Pressable
         style={styles.secondary}
         onPress={async () => {
+          await unregisterDevicePushToken();
           await Session.clearSession();
           router.replace("/");
         }}
@@ -122,41 +100,43 @@ export default function LobbyScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  centered: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#1a1a2e",
-    gap: 12,
-  },
-  muted: { color: "#888" },
-  scroll: {
-    padding: 24,
-    backgroundColor: "#1a1a2e",
-    flexGrow: 1,
-  },
-  title: { fontSize: 26, fontWeight: "800", color: "#fff", marginBottom: 8 },
-  status: { color: "#aaa", marginBottom: 20 },
-  timerBox: {
-    backgroundColor: "#16213e",
-    padding: 20,
-    borderRadius: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: "#0f3460",
-  },
-  timerLabel: { color: "#aaa", fontSize: 13, marginBottom: 6 },
-  timer: { fontSize: 32, fontWeight: "700", color: "#e94560", fontVariant: ["tabular-nums"] },
-  meta: { color: "#888", marginBottom: 24 },
-  btn: {
-    backgroundColor: "#e94560",
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  btnDisabled: { opacity: 0.45 },
-  btnText: { color: "#fff", fontSize: 17, fontWeight: "700" },
-  secondary: { marginTop: 20, alignItems: "center" },
-  secondaryText: { color: "#6c9cff" },
-});
+function createStyles(c: AppThemeColors) {
+  return StyleSheet.create({
+    centered: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: c.background,
+      gap: 12,
+    },
+    muted: { color: c.textMuted },
+    scroll: {
+      padding: 24,
+      backgroundColor: c.background,
+      flexGrow: 1,
+    },
+    title: { fontSize: 26, fontWeight: "800", color: c.text, marginBottom: 8 },
+    status: { color: c.textSecondary, marginBottom: 20 },
+    timerBox: {
+      backgroundColor: c.surface,
+      padding: 20,
+      borderRadius: 12,
+      marginBottom: 16,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    timerLabel: { color: c.textSecondary, fontSize: 13, marginBottom: 6 },
+    timer: { fontSize: 32, fontWeight: "700", color: c.accent, fontVariant: ["tabular-nums"] },
+    meta: { color: c.textMuted, marginBottom: 24 },
+    btn: {
+      backgroundColor: c.accent,
+      paddingVertical: 16,
+      borderRadius: 12,
+      alignItems: "center",
+    },
+    btnDisabled: { opacity: 0.45 },
+    btnText: { color: c.onAccent, fontSize: 17, fontWeight: "700" },
+    secondary: { marginTop: 20, alignItems: "center" },
+    secondaryText: { color: c.link },
+  });
+}

@@ -1,5 +1,9 @@
 import type { Challenge, HuntPublic } from "@scavenger/types";
 import { getApiBaseUrl } from "./config";
+import {
+  clearStoredExpoPushToken,
+  getStoredExpoPushToken,
+} from "./pushTokenStorage";
 import { getToken } from "./session";
 
 const BASE = () => getApiBaseUrl();
@@ -32,7 +36,10 @@ export async function apiJoin(slug: string, joinCode: string): Promise<JoinRespo
 export type HuntStateResponse = {
   hunt: HuntPublic;
   challenges: Challenge[];
+  /** Approved by admin — counts toward progress and points. */
   completedChallengeIds: string[];
+  /** Awaiting admin approval (can re-upload). */
+  pendingChallengeIds: string[];
 };
 
 export async function apiMeState(): Promise<HuntStateResponse> {
@@ -76,4 +83,42 @@ export async function apiCompleteChallenge(
     body: JSON.stringify({ challengeId, s3Key }),
   });
   if (!r.ok) throw new Error(`Complete ${r.status}`);
+}
+
+export async function apiRegisterPushToken(
+  expoPushToken: string,
+  platform: "ios" | "android"
+): Promise<void> {
+  const r = await fetch(`${BASE()}/api/push/token`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(await authHeaders()),
+    },
+    body: JSON.stringify({ expoPushToken, platform }),
+  });
+  if (!r.ok) throw new Error(`Push register ${r.status}`);
+}
+
+/** Best-effort server unregister; always clears local stored Expo token after. */
+export async function unregisterDevicePushToken(): Promise<void> {
+  const expoTok = await getStoredExpoPushToken();
+  if (!expoTok) return;
+  try {
+    const jwt = await getToken();
+    if (jwt) {
+      await fetch(`${BASE()}/api/push/token`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${jwt}`,
+        },
+        body: JSON.stringify({ expoPushToken: expoTok }),
+      });
+    }
+  } catch {
+    /* ignore */
+  }
+  await clearStoredExpoPushToken();
+  void import("./pushSync").then((m) => m.resetPushRegistrationState());
 }

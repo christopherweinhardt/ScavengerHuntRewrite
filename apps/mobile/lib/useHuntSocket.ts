@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { io, type Socket } from "socket.io-client";
 import { getApiBaseUrl } from "./config";
-import { getToken } from "./session";
+import { getTeamId, getToken } from "./session";
 import type { HuntStateResponse } from "./api";
 
 function mergeUpsert(
@@ -45,7 +45,11 @@ export function useHuntSocket(enabled: boolean): void {
                 c
               )
             : old.challenges.filter((x) => x.id !== c.id);
-          return { ...old, challenges };
+          return {
+            ...old,
+            challenges,
+            pendingChallengeIds: old.pendingChallengeIds ?? [],
+          };
         });
       });
 
@@ -57,6 +61,7 @@ export function useHuntSocket(enabled: boolean): void {
             return {
               ...old,
               challenges: old.challenges.filter((x) => x.id !== payload.id),
+              pendingChallengeIds: old.pendingChallengeIds ?? [],
             };
           });
         }
@@ -64,9 +69,23 @@ export function useHuntSocket(enabled: boolean): void {
 
       socket.on("hunt:meta", (h: HuntPublic) => {
         qc.setQueryData<HuntStateResponse>(["huntState"], (old) =>
-          old ? { ...old, hunt: h } : old
+          old
+            ? { ...old, hunt: h, pendingChallengeIds: old.pendingChallengeIds ?? [] }
+            : old
         );
       });
+
+      socket.on(
+        "completion:status",
+        (payload: { teamId: string; challengeId: string; status: string }) => {
+          void (async () => {
+            const mine = await getTeamId();
+            if (mine && payload.teamId === mine) {
+              void qc.invalidateQueries({ queryKey: ["huntState"] });
+            }
+          })();
+        }
+      );
     })();
 
     return () => {

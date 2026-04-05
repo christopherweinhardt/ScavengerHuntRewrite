@@ -1,26 +1,54 @@
+import type { Challenge } from "@scavenger/types";
 import { Hono } from "hono";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { authTeam, requireAdmin, signTeamJwt } from "../auth/jwt.js";
 import { db } from "../db/index.js";
-import { challenges, completions, hunts, teams } from "../db/schema.js";
+import {
+  challenges,
+  completions,
+  hunts,
+  pushTokens,
+  teams,
+} from "../db/schema.js";
 import { getIo } from "../io.js";
 import { toChallenge, toHuntPublic } from "../mappers.js";
+import { notifyTeam, notifyTeamsInHunt } from "../push/notify.js";
 import {
   buildObjectKey,
   completeMultipart,
   getSession,
   initMultipart,
+  presignGetObject,
   presignPutObject,
   presignUploadPart,
 } from "../s3.js";
 import {
   emitChallengeRemove,
   emitChallengeUpsert,
+  emitCompletionStatus,
   emitHuntMeta,
 } from "../socket/hub.js";
 
 const api = new Hono();
+
+async function teamChallengeCompletion(teamId: string, challengeId: string) {
+  return db.query.completions.findFirst({
+    where: and(
+      eq(completions.teamId, teamId),
+      eq(completions.challengeId, challengeId)
+    ),
+  });
+}
+
+function pushNotifyActiveChallenge(huntId: string, dto: Challenge): void {
+  if (!dto.active) return;
+  notifyTeamsInHunt(huntId, {
+    title: "New task",
+    body: dto.title,
+    data: { type: "challenge", challengeId: dto.id },
+  });
+}
 
 api.get("/public/hunts/:slug", async (c) => {
   const slug = c.req.param("slug");
@@ -88,11 +116,18 @@ authed.get("/me/state", async (c) => {
   const done = await db.query.completions.findMany({
     where: eq(completions.teamId, team.teamId),
   });
+  const completedChallengeIds = done
+    .filter((d) => d.status === "approved")
+    .map((d) => d.challengeId);
+  const pendingChallengeIds = done
+    .filter((d) => d.status === "pending")
+    .map((d) => d.challengeId);
 
   return c.json({
     hunt: toHuntPublic(hunt),
     challenges: list.filter((x) => x.active).map(toChallenge),
-    completedChallengeIds: done.map((d) => d.challengeId),
+    completedChallengeIds,
+    pendingChallengeIds,
   });
 });
 
@@ -123,6 +158,10 @@ authed.post("/uploads/presign-put", async (c) => {
     ),
   });
   if (!ch) return c.json({ error: "Challenge not found" }, 404);
+  const existing = await teamChallengeCompletion(team.teamId, ch.id);
+  if (existing?.status === "approved") {
+    return c.json({ error: "Challenge already approved" }, 400);
+  }
   const key = buildObjectKey({
     huntId: team.huntId,
     teamId: team.teamId,
@@ -151,6 +190,10 @@ authed.post("/uploads/multipart/init", async (c) => {
     ),
   });
   if (!ch) return c.json({ error: "Challenge not found" }, 404);
+  const existingMp = await teamChallengeCompletion(team.teamId, ch.id);
+  if (existingMp?.status === "approved") {
+    return c.json({ error: "Challenge already approved" }, 400);
+  }
   const key = buildObjectKey({
     huntId: team.huntId,
     teamId: team.teamId,
@@ -231,17 +274,87 @@ authed.post("/completions", async (c) => {
     return c.json({ error: "Invalid key" }, 400);
   }
 
-  await db
-    .insert(completions)
-    .values({
+  const existing = await teamChallengeCompletion(team.teamId, ch.id);
+  if (existing?.status === "approved") {
+    return c.json({ ok: true });
+  }
+  if (existing?.status === "pending") {
+    await db
+      .update(completions)
+      .set({
+        s3Key: body.data.s3Key,
+        createdAt: new Date(),
+      })
+      .where(eq(completions.id, existing.id));
+    emitCompletionStatus(getIo(), team.huntId, {
       teamId: team.teamId,
       challengeId: ch.id,
-      s3Key: body.data.s3Key,
-    })
-    .onConflictDoNothing({
-      target: [completions.teamId, completions.challengeId],
+      status: "pending",
     });
+    return c.json({ ok: true });
+  }
 
+  await db.insert(completions).values({
+    teamId: team.teamId,
+    challengeId: ch.id,
+    s3Key: body.data.s3Key,
+    status: "pending",
+  });
+  emitCompletionStatus(getIo(), team.huntId, {
+    teamId: team.teamId,
+    challengeId: ch.id,
+    status: "pending",
+  });
+  return c.json({ ok: true });
+});
+
+const pushTokenBody = z.object({
+  expoPushToken: z.string().min(1),
+  platform: z.enum(["ios", "android"]),
+});
+
+authed.post("/push/token", async (c) => {
+  const team = c.get("team");
+  const body = pushTokenBody.safeParse(await c.req.json());
+  if (!body.success) return c.json({ error: "Invalid body" }, 400);
+  const now = new Date();
+  await db
+    .insert(pushTokens)
+    .values({
+      teamId: team.teamId,
+      expoPushToken: body.data.expoPushToken,
+      platform: body.data.platform,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: pushTokens.expoPushToken,
+      set: {
+        teamId: team.teamId,
+        platform: body.data.platform,
+        updatedAt: now,
+      },
+    });
+  return c.json({ ok: true });
+});
+
+authed.delete("/push/token", async (c) => {
+  const team = c.get("team");
+  const q = c.req.query("expoPushToken");
+  const raw: unknown = q
+    ? { expoPushToken: q }
+    : await c.req.json().catch(() => ({}));
+  const body = z
+    .object({ expoPushToken: z.string().min(1) })
+    .safeParse(raw);
+  if (!body.success) return c.json({ error: "Invalid body" }, 400);
+  await db
+    .delete(pushTokens)
+    .where(
+      and(
+        eq(pushTokens.expoPushToken, body.data.expoPushToken),
+        eq(pushTokens.teamId, team.teamId)
+      )
+    );
   return c.json({ ok: true });
 });
 
@@ -249,6 +362,129 @@ api.route("/", authed);
 
 const admin = new Hono();
 admin.use("*", requireAdmin());
+
+admin.get("/hunts", async (c) => {
+  const rows = await db.query.hunts.findMany({
+    orderBy: (h, { desc: d }) => [d(h.createdAt)],
+  });
+  return c.json({ hunts: rows.map(toHuntPublic) });
+});
+
+admin.get("/hunts/:huntId", async (c) => {
+  const huntId = c.req.param("huntId");
+  const hunt = await db.query.hunts.findFirst({ where: eq(hunts.id, huntId) });
+  if (!hunt) return c.json({ error: "Not found" }, 404);
+  const teamList = await db.query.teams.findMany({
+    where: eq(teams.huntId, huntId),
+    orderBy: (t, { asc }) => [asc(t.createdAt)],
+  });
+  const chList = await db.query.challenges.findMany({
+    where: eq(challenges.huntId, huntId),
+    orderBy: (ch, { asc }) => [asc(ch.sortOrder), asc(ch.createdAt)],
+  });
+  const challengeTypeById = new Map(
+    chList.map((row) => [row.id, row.type as "photo" | "video"])
+  );
+  let submissions: Array<{
+    id: string;
+    challengeId: string;
+    teamId: string;
+    teamName: string;
+    submittedAt: string;
+    mediaType: "photo" | "video";
+    status: "pending" | "approved";
+    viewUrl: string | null;
+  }> = [];
+  if (chList.length > 0) {
+    const challengeIds = chList.map((x) => x.id);
+    const compRows = await db.query.completions.findMany({
+      where: inArray(completions.challengeId, challengeIds),
+      with: { team: true },
+      orderBy: (comp, { desc: d }) => [d(comp.createdAt)],
+    });
+    const built = await Promise.all(
+      compRows.map(async (row) => {
+        const team = row.team;
+        if (!team || team.huntId !== huntId) return null;
+        let viewUrl: string | null = null;
+        try {
+          viewUrl = await presignGetObject(row.s3Key);
+        } catch {
+          viewUrl = null;
+        }
+        return {
+          id: row.id,
+          challengeId: row.challengeId,
+          teamId: row.teamId,
+          teamName: team.name,
+          submittedAt: (row.createdAt ?? new Date()).toISOString(),
+          mediaType: challengeTypeById.get(row.challengeId) ?? "photo",
+          status: row.status,
+          viewUrl,
+        };
+      })
+    );
+    submissions = built.filter(
+      (x): x is NonNullable<(typeof built)[number]> => x !== null
+    );
+  }
+  return c.json({
+    hunt: toHuntPublic(hunt),
+    teams: teamList.map((t) => ({
+      id: t.id,
+      name: t.name,
+      joinCode: t.joinCode,
+    })),
+    challenges: chList.map(toChallenge),
+    submissions,
+  });
+});
+
+admin.post("/completions/:id/approve", async (c) => {
+  const id = c.req.param("id");
+  const row = await db.query.completions.findFirst({
+    where: and(eq(completions.id, id), eq(completions.status, "pending")),
+    with: { team: true, challenge: true },
+  });
+  if (!row?.team || !row.challenge) return c.json({ error: "Not found" }, 404);
+  if (row.team.huntId !== row.challenge.huntId) {
+    return c.json({ error: "Not found" }, 404);
+  }
+  await db
+    .update(completions)
+    .set({ status: "approved" })
+    .where(eq(completions.id, id));
+  emitCompletionStatus(getIo(), row.team.huntId, {
+    teamId: row.teamId,
+    challengeId: row.challengeId,
+    status: "approved",
+  });
+  return c.json({ ok: true });
+});
+
+admin.delete("/completions/:id", async (c) => {
+  const id = c.req.param("id");
+  const row = await db.query.completions.findFirst({
+    where: eq(completions.id, id),
+    with: { team: true, challenge: true },
+  });
+  if (!row?.team) return c.json({ error: "Not found" }, 404);
+  const huntId = row.team.huntId;
+  const { teamId, challengeId } = row;
+  const challengeTitle = row.challenge?.title ?? "A task";
+  await db.delete(completions).where(eq(completions.id, id));
+  emitCompletionStatus(getIo(), huntId, {
+    teamId,
+    challengeId,
+    status: "none",
+  });
+  notifyTeam(teamId, {
+    title: "Submission Rejected",
+    body: `Your submission for "${challengeTitle}" has been rejected. Please submit a new one.`,
+    data: { type: "completion_rejected", challengeId },
+  });
+  return c.json({ ok: true });
+});
 
 admin.post("/hunts", async (c) => {
   const body = z
@@ -327,7 +563,56 @@ admin.post("/hunts/:huntId/challenges", async (c) => {
     .returning();
   const dto = toChallenge(row);
   emitChallengeUpsert(getIo(), hunt.id, dto);
+  pushNotifyActiveChallenge(hunt.id, dto);
   return c.json({ challenge: dto });
+});
+
+const challengeImportItemSchema = z.object({
+  title: z.string().min(1),
+  description: z.string().default(""),
+  type: z.enum(["photo", "video"]).default("photo"),
+  isBonus: z.boolean().default(false),
+  sortOrder: z.number().int().default(0),
+  active: z.boolean().default(true),
+  points: z.number().int().min(0).default(1),
+});
+
+admin.post("/hunts/:huntId/challenges/import", async (c) => {
+  const huntId = c.req.param("huntId");
+  const body = z
+    .object({
+      challenges: z.array(challengeImportItemSchema).min(1).max(500),
+    })
+    .safeParse(await c.req.json());
+  if (!body.success) {
+    return c.json({ error: "Invalid body", details: body.error.flatten() }, 400);
+  }
+  const hunt = await db.query.hunts.findFirst({ where: eq(hunts.id, huntId) });
+  if (!hunt) return c.json({ error: "Hunt not found" }, 404);
+
+  const rows = body.data.challenges.map((ch) => ({
+    huntId: hunt.id,
+    title: ch.title.trim(),
+    description: ch.description,
+    type: ch.type as (typeof challenges.$inferInsert)["type"],
+    isBonus: ch.isBonus,
+    sortOrder: ch.sortOrder,
+    active: ch.active,
+    points: ch.points,
+  }));
+
+  const inserted = await db.insert(challenges).values(rows).returning();
+  const io = getIo();
+  for (const row of inserted) {
+    const dto = toChallenge(row);
+    emitChallengeUpsert(io, hunt.id, dto);
+    pushNotifyActiveChallenge(hunt.id, dto);
+  }
+
+  return c.json({
+    imported: inserted.length,
+    challenges: inserted.map(toChallenge),
+  });
 });
 
 admin.patch("/challenges/:id", async (c) => {
@@ -359,6 +644,7 @@ admin.patch("/challenges/:id", async (c) => {
   if (!row) return c.json({ error: "Not found" }, 404);
   const dto = toChallenge(row);
   emitChallengeUpsert(getIo(), row.huntId, dto);
+  pushNotifyActiveChallenge(row.huntId, dto);
   return c.json({ challenge: dto });
 });
 
@@ -398,6 +684,13 @@ admin.patch("/hunts/:huntId", async (c) => {
   const dto = toHuntPublic(row);
   emitHuntMeta(getIo(), row.id, dto);
   return c.json({ hunt: dto });
+});
+
+admin.delete("/hunts/:huntId", async (c) => {
+  const huntId = c.req.param("huntId");
+  const [row] = await db.delete(hunts).where(eq(hunts.id, huntId)).returning();
+  if (!row) return c.json({ error: "Not found" }, 404);
+  return c.json({ ok: true });
 });
 
 export const adminRoutes = admin;

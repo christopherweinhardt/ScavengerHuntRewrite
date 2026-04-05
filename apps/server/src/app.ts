@@ -15,7 +15,9 @@ app.use(
 
 app.get("/health", (c) => c.json({ ok: true }));
 
+// Admin must NOT live under `/api/*`: `authed.use("*", authTeam())` in apiRoutes
+// attaches team JWT middleware to every `/api/...` route, including `/api/admin/...`.
+app.route("/admin", adminRoutes);
 app.route("/api", apiRoutes);
-app.route("/api/admin", adminRoutes);
 
 export default app;

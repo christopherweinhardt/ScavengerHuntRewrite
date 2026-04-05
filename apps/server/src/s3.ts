@@ -1,6 +1,7 @@
 import {
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
+  GetObjectCommand,
   PutObjectCommand,
   S3Client,
   UploadPartCommand,
@@ -44,6 +45,14 @@ export async function presignPutObject(params: {
   });
   const url = await getSignedUrl(s3, cmd, { expiresIn: 3600 });
   return { url, key: params.key };
+}
+
+export async function presignGetObject(key: string): Promise<string> {
+  const cmd = new GetObjectCommand({
+    Bucket: config.s3Bucket,
+    Key: key,
+  });
+  return getSignedUrl(s3, cmd, { expiresIn: 3600 });
 }
 
 export type MultipartSession = {

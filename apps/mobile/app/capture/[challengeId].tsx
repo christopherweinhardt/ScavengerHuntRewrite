@@ -1,6 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
-import { useRef, useState } from "react";
+import { useVideoPlayer, VideoView } from "expo-video";
+import { useMemo, useRef, useState } from "react";
+import type { StyleProp, ViewStyle } from "react-native";
 import {
   View,
   Text,
@@ -10,6 +12,7 @@ import {
   Alert,
   Platform,
 } from "react-native";
+import { Image } from "expo-image";
 import {
   CameraView,
   useCameraPermissions,
@@ -19,6 +22,9 @@ import { apiMeState } from "@/lib/api";
 import { copyToBackup } from "@/lib/backup";
 import { enqueueUpload } from "@/lib/uploadQueue";
 import { uploadProofAndComplete } from "@/lib/upload";
+import { useRedirectOnHuntLoadFailure } from "@/lib/useRedirectOnHuntLoadFailure";
+import type { AppThemeColors } from "@/constants/Colors";
+import { useAppTheme } from "@/lib/useAppTheme";
 
 function guessMime(uri: string, kind: "photo" | "video"): { ext: string; contentType: string } {
   const lower = uri.toLowerCase();
@@ -31,8 +37,22 @@ function guessMime(uri: string, kind: "photo" | "video"): { ext: string; content
   return { ext: "mp4", contentType: "video/mp4" };
 }
 
+type Preview = { uri: string; kind: "photo" | "video" };
+
+/** Mounted with `key={uri}` so each recording gets a fresh player. */
+function LocalVideoPreview({ uri, style }: { uri: string; style: StyleProp<ViewStyle> }) {
+  const player = useVideoPlayer({ uri }, (p) => {
+    p.play();
+  });
+  return (
+    <VideoView style={style} player={player} nativeControls contentFit="contain" />
+  );
+}
+
 export default function CaptureScreen() {
   const { challengeId } = useLocalSearchParams<{ challengeId: string }>();
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const qc = useQueryClient();
   const camRef = useRef<CameraView>(null);
   const recordWaitRef = useRef<Promise<{ uri: string } | undefined> | null>(null);
@@ -42,11 +62,14 @@ export default function CaptureScreen() {
 
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [preview, setPreview] = useState<Preview | null>(null);
 
   const q = useQuery({
     queryKey: ["huntState"],
     queryFn: apiMeState,
   });
+
+  useRedirectOnHuntLoadFailure(q);
 
   const challenge = q.data?.challenges.find((c) => c.id === challengeId);
 
@@ -107,7 +130,7 @@ export default function CaptureScreen() {
     try {
       await ensurePerms(false);
       const shot = await c.takePictureAsync({ quality: 0.85 });
-      if (shot?.uri) await onSubmit(shot.uri, "photo");
+      if (shot?.uri) setPreview({ uri: shot.uri, kind: "photo" });
     } catch (e) {
       Alert.alert("Capture error", e instanceof Error ? e.message : "Unknown");
     }
@@ -138,17 +161,32 @@ export default function CaptureScreen() {
       recordWaitRef.current = null;
       setRecording(false);
       const result = p ? await p : undefined;
-      if (result?.uri) await onSubmit(result.uri, "video");
+      if (result?.uri) setPreview({ uri: result.uri, kind: "video" });
     } catch (e) {
       setRecording(false);
       Alert.alert("Recording error", e instanceof Error ? e.message : "Unknown");
     }
   }
 
-  if (!challengeId || !q.data) {
+  if (!challengeId) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator color="#e94560" />
+        <Text style={styles.muted}>Invalid task.</Text>
+        <Pressable style={styles.btn} onPress={() => router.back()}>
+          <Text style={styles.btnText}>Back</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  if (q.isError && q.data == null) {
+    return <View style={styles.centered} />;
+  }
+
+  if (!q.data) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator color={colors.accent} />
       </View>
     );
   }
@@ -164,13 +202,57 @@ export default function CaptureScreen() {
     );
   }
 
-  const mode = challenge.type === "video" ? "video" : "picture";
+  if (q.data.completedChallengeIds.includes(challenge.id)) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.muted}>
+          This task is approved. No need to submit again.
+        </Text>
+        <Pressable style={styles.btn} onPress={() => router.back()}>
+          <Text style={styles.btnText}>Back</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   if (busy) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#e94560" />
+        <ActivityIndicator size="large" color={colors.accent} />
         <Text style={styles.muted}>Uploading…</Text>
+      </View>
+    );
+  }
+
+  const mode = challenge.type === "video" ? "video" : "picture";
+
+  if (preview) {
+    return (
+      <View style={styles.wrap}>
+        <Text style={styles.title}>{challenge.title}</Text>
+        {preview.kind === "photo" ? (
+          <Image
+            source={{ uri: preview.uri }}
+            style={styles.preview}
+            contentFit="contain"
+          />
+        ) : (
+          <LocalVideoPreview key={preview.uri} uri={preview.uri} style={styles.preview} />
+        )}
+        <View style={styles.actions}>
+          <Pressable
+            style={styles.btn}
+            onPress={() => void onSubmit(preview.uri, preview.kind)}
+          >
+            <Text style={styles.btnText}>Submit</Text>
+          </Pressable>
+          <Pressable style={styles.secondary} onPress={() => setPreview(null)}>
+            <Text style={styles.secondaryText}>Retake</Text>
+          </Pressable>
+          <Pressable style={styles.secondary} onPress={() => router.back()}>
+            <Text style={styles.secondaryText}>Cancel</Text>
+          </Pressable>
+        </View>
       </View>
     );
   }
@@ -192,7 +274,7 @@ export default function CaptureScreen() {
             </Pressable>
           ) : (
             <Pressable style={[styles.btn, styles.stop]} onPress={() => void stopVideo()}>
-              <Text style={styles.btnText}>Stop & upload</Text>
+              <Text style={styles.btnText}>Stop</Text>
             </Pressable>
           )
         ) : (
@@ -208,34 +290,37 @@ export default function CaptureScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: { flex: 1, backgroundColor: "#000" },
-  camera: { flex: 1 },
-  title: {
-    color: "#fff",
-    padding: 12,
-    fontSize: 16,
-    fontWeight: "700",
-    backgroundColor: "rgba(0,0,0,0.55)",
-  },
-  actions: { padding: 16, backgroundColor: "#1a1a2e", gap: 12 },
-  btn: {
-    backgroundColor: "#e94560",
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  stop: { backgroundColor: "#533483" },
-  btnText: { color: "#fff", fontWeight: "700", fontSize: 16 },
-  secondary: { alignItems: "center", padding: 8 },
-  secondaryText: { color: "#6c9cff" },
-  centered: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#1a1a2e",
-    padding: 24,
-    gap: 12,
-  },
-  muted: { color: "#888", textAlign: "center" },
-});
+function createStyles(c: AppThemeColors) {
+  return StyleSheet.create({
+    wrap: { flex: 1, backgroundColor: c.cameraBg },
+    camera: { flex: 1 },
+    preview: { flex: 1, backgroundColor: c.cameraBg },
+    title: {
+      color: "#fff",
+      padding: 12,
+      fontSize: 16,
+      fontWeight: "700",
+      backgroundColor: c.captureTitleBg,
+    },
+    actions: { padding: 16, backgroundColor: c.captureActionsBg, gap: 12 },
+    btn: {
+      backgroundColor: c.accent,
+      paddingVertical: 14,
+      borderRadius: 12,
+      alignItems: "center",
+    },
+    stop: { backgroundColor: c.stopButton },
+    btnText: { color: c.onAccent, fontWeight: "700", fontSize: 16 },
+    secondary: { alignItems: "center", padding: 8 },
+    secondaryText: { color: c.link },
+    centered: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+      backgroundColor: c.background,
+      padding: 24,
+      gap: 12,
+    },
+    muted: { color: c.textMuted, textAlign: "center" },
+  });
+}

@@ -9,14 +9,17 @@
     "expo-router": "55.0.10"
   },
   "scripts": {
-    "types:build": "npm run build -w @scavenger/types",
-    "server:dev": "npm run dev -w @scavenger/server",
-    "server:db:generate": "npm run db:generate -w @scavenger/server",
-    "server:db:migrate": "npm run db:migrate -w @scavenger/server",
-    "server:db:seed": "npm run db:seed -w @scavenger/server",
-    "mobile:start": "npm run start -w @scavenger/mobile"
+    "types:build": "bun run build -w @scavenger/types",
+    "server:dev": "bun run dev -w @scavenger/server",
+    "server:db:generate": "bun run db:generate -w @scavenger/server",
+    "server:db:migrate": "bun run db:migrate -w @scavenger/server",
+    "server:db:seed": "bun run db:seed -w @scavenger/server",
+    "mobile:start": "bun run start -w @scavenger/mobile",
+    "admin:dev": "bun run --cwd apps/admin dev",
+    "admin:build": "bun run --cwd apps/admin build"
   },
   "devDependencies": {
     "tsx": "^4.21.0"
-  }
+  },
+  "version": "1.0.0"
 }

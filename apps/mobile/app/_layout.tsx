@@ -1,6 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { usePushRegistration } from "@/lib/usePushRegistration";
+import { useAppTheme } from "@/lib/useAppTheme";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -14,15 +16,19 @@ export const unstable_settings = {
   initialRouteName: "index",
 };
 
-export default function RootLayout() {
+function ThemedStack() {
+  usePushRegistration();
+  const { colors, isDark } = useAppTheme();
+
   return (
-    <QueryClientProvider client={queryClient}>
-      <StatusBar style="light" />
+    <>
+      <StatusBar style={isDark ? "light" : "dark"} />
       <Stack
         screenOptions={{
-          headerStyle: { backgroundColor: "#16213e" },
-          headerTintColor: "#eaeaea",
-          contentStyle: { backgroundColor: "#1a1a2e" },
+          headerStyle: { backgroundColor: colors.headerBg },
+          headerTintColor: colors.headerTint,
+          headerTitleStyle: { color: colors.text },
+          contentStyle: { backgroundColor: colors.background },
         }}
       >
         <Stack.Screen name="index" options={{ title: "Join hunt" }} />
@@ -33,6 +39,14 @@ export default function RootLayout() {
           options={{ title: "Capture", presentation: "fullScreenModal" }}
         />
       </Stack>
+    </>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ThemedStack />
     </QueryClientProvider>
   );
 }
