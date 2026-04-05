@@ -1,0 +1,62 @@
+# Builds apps/admin and deploys to GitHub Pages (project site: https://<user>.github.io/<repo>/).
+#
+# First-time: Repo → Settings → Pages → Build and deployment → Source: GitHub Actions.
+# Optional: Settings → Secrets and variables → Actions → Variables → ADMIN_API_PUBLIC_URL
+# (your public API origin, e.g. https://api.example.com) so the login form defaults correctly.
+
+name: Deploy admin to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/admin/**"
+      - ".github/workflows/deploy-admin-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-admin
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build admin
+        env:
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/
+          VITE_API_BASE_URL: ${{ vars.ADMIN_API_PUBLIC_URL }}
+        run: bun run --cwd apps/admin build
+
+      - name: SPA fallback and Jekyll bypass
+        run: |
+          cp apps/admin/dist/index.html apps/admin/dist/404.html
+          touch apps/admin/dist/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/admin/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment
