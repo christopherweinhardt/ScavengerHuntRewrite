@@ -8,7 +8,7 @@ name: Deploy admin to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [master]
     paths:
       - "apps/admin/**"
       - ".github/workflows/deploy-admin-pages.yml"
