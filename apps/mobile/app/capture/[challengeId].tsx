@@ -19,6 +19,7 @@ import {
   useMicrophonePermissions,
 } from "expo-camera";
 import { apiMeState } from "@/lib/api";
+import { syncCompletionIntoHuntState } from "@/lib/huntStateCache";
 import { copyToBackup } from "@/lib/backup";
 import { enqueueUpload } from "@/lib/uploadQueue";
 import { uploadProofAndComplete } from "@/lib/upload";
@@ -66,7 +67,7 @@ export default function CaptureScreen() {
 
   const q = useQuery({
     queryKey: ["huntState"],
-    queryFn: apiMeState,
+    queryFn: ({ signal }) => apiMeState(signal),
   });
 
   useRedirectOnHuntLoadFailure(q);
@@ -104,7 +105,8 @@ export default function CaptureScreen() {
         contentType,
         ext,
       });
-      await qc.invalidateQueries({ queryKey: ["huntState"] });
+      await syncCompletionIntoHuntState(qc, challenge.id, "pending");
+      await qc.refetchQueries({ queryKey: ["huntState"], type: "active" });
       router.back();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Upload failed";

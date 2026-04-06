@@ -1,6 +1,8 @@
+import { HeaderBackButton } from "@react-navigation/elements";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { router, useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useMemo } from "react";
+import { router, useFocusEffect, useNavigation } from "expo-router";
+import type { ComponentProps } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -15,14 +17,15 @@ import { apiMeState } from "@/lib/api";
 import { useHuntTimer, useNow } from "@/lib/huntTimer";
 import { flushUploadQueue } from "@/lib/uploadQueue";
 import { useRedirectOnHuntLoadFailure } from "@/lib/useRedirectOnHuntLoadFailure";
-import { useHuntSocket } from "@/lib/useHuntSocket";
 import * as Session from "@/lib/session";
 import type { AppThemeColors } from "@/constants/Colors";
 import { useAppTheme } from "@/lib/useAppTheme";
 
 export default function HuntScreen() {
+  const navigation = useNavigation();
   const { colors } = useAppTheme();
   const { width: windowWidth } = useWindowDimensions();
+
   const scoreBoxWidth = useMemo(
     () => Math.max(52, Math.round(windowWidth / 6)),
     [windowWidth]
@@ -33,7 +36,6 @@ export default function HuntScreen() {
   );
   const qc = useQueryClient();
   const now = useNow();
-  useHuntSocket(true);
 
   useEffect(() => {
     void (async () => {
@@ -43,6 +45,7 @@ export default function HuntScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      void qc.refetchQueries({ queryKey: ["huntState"], type: "active" });
       void flushUploadQueue().then(({ ok, failed }) => {
         if (ok > 0) void qc.invalidateQueries({ queryKey: ["huntState"] });
         if (failed > 0) {
@@ -54,7 +57,7 @@ export default function HuntScreen() {
 
   const q = useQuery({
     queryKey: ["huntState"],
-    queryFn: apiMeState,
+    queryFn: ({ signal }) => apiMeState(signal),
   });
 
   useRedirectOnHuntLoadFailure(q);
@@ -132,20 +135,6 @@ export default function HuntScreen() {
             : ""}
         </Text>
 
-        <Text style={styles.section}>Tasks</Text>
-        {regular.map((c) => (
-          <TaskRow
-            key={c.id}
-            title={c.title}
-            subtitle={c.description}
-            type={c.type}
-            points={c.points ?? 1}
-            approved={approved.has(c.id)}
-            pendingReview={pending.has(c.id) && !approved.has(c.id)}
-            onPress={() => router.push(`/capture/${c.id}`)}
-          />
-        ))}
-
         {bonus.length > 0 && (
           <>
             <Text style={styles.section}>Bonus</Text>
@@ -164,6 +153,20 @@ export default function HuntScreen() {
             ))}
           </>
         )}
+
+        <Text style={styles.section}>Tasks</Text>
+        {regular.map((c) => (
+          <TaskRow
+            key={c.id}
+            title={c.title}
+            subtitle={c.description}
+            type={c.type}
+            points={c.points ?? 1}
+            approved={approved.has(c.id)}
+            pendingReview={pending.has(c.id) && !approved.has(c.id)}
+            onPress={() => router.push(`/capture/${c.id}`)}
+          />
+        ))}
       </View>
     </ScrollView>
   );

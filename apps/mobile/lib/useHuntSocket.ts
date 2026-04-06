@@ -1,10 +1,20 @@
 import type { Challenge, HuntPublic } from "@scavenger/types";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
+import { usePathname } from "expo-router";
+import { useEffect, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 import { getApiBaseUrl } from "./config";
-import { getTeamId, getToken } from "./session";
+import { syncCompletionIntoHuntState } from "./huntStateCache";
+import { showSubmissionRejectedAlert } from "./rejectionNotify";
+import { getTeamId, getToken, parseTeamIdFromJwt } from "./session";
 import type { HuntStateResponse } from "./api";
+
+type CompletionStatusPayload = {
+  teamId: string;
+  challengeId: string;
+  status: "approved" | "pending" | "none";
+  challengeTitle?: string;
+};
 
 function mergeUpsert(
   list: Challenge[],
@@ -75,17 +85,24 @@ export function useHuntSocket(enabled: boolean): void {
         );
       });
 
-      socket.on(
-        "completion:status",
-        (payload: { teamId: string; challengeId: string; status: string }) => {
-          void (async () => {
-            const mine = await getTeamId();
-            if (mine && payload.teamId === mine) {
-              void qc.invalidateQueries({ queryKey: ["huntState"] });
-            }
-          })();
-        }
-      );
+      const myTeamIdFromJwt = parseTeamIdFromJwt(token);
+      socket.on("completion:status", (payload: CompletionStatusPayload) => {
+        const challengeId = String(payload.challengeId);
+        void (async () => {
+          const storedTeamId = await getTeamId();
+          const mine = storedTeamId ?? myTeamIdFromJwt;
+          if (!mine) return;
+          if (payload.teamId.toLowerCase() !== mine.toLowerCase()) return;
+          await syncCompletionIntoHuntState(qc, challengeId, payload.status);
+          if (payload.status === "none") {
+            const task = payload.challengeTitle ?? "this task";
+            showSubmissionRejectedAlert(
+              challengeId,
+              `Your submission for "${task}" was rejected. You can submit a new one.`
+            );
+          }
+        })();
+      });
     })();
 
     return () => {
@@ -94,4 +111,26 @@ export function useHuntSocket(enabled: boolean): void {
       socketRef.current = null;
     };
   }, [enabled, qc]);
+}
+
+/** Single socket while signed in (any hunt screen); avoids missing events on capture, etc. */
+export function HuntSocketBridge(): null {
+  const pathname = usePathname();
+  const [enabled, setEnabled] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      const token = await getToken();
+      // Do not treat missing pathname as join — Expo Router can report null/undefined briefly,
+      // which would keep the socket off and drop all completion:status events.
+      const onJoin =
+        pathname === "/" ||
+        pathname === "/index" ||
+        pathname === "index";
+      setEnabled(!!token && !onJoin);
+    })();
+  }, [pathname]);
+
+  useHuntSocket(enabled);
+  return null;
 }

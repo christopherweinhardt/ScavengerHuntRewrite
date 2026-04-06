@@ -13,7 +13,6 @@ import {
 import { apiMeState, unregisterDevicePushToken } from "@/lib/api";
 import { useHuntTimer, useNow } from "@/lib/huntTimer";
 import { useRedirectOnHuntLoadFailure } from "@/lib/useRedirectOnHuntLoadFailure";
-import { useHuntSocket } from "@/lib/useHuntSocket";
 import type { AppThemeColors } from "@/constants/Colors";
 import { useAppTheme } from "@/lib/useAppTheme";
 
@@ -21,7 +20,6 @@ export default function LobbyScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const now = useNow();
-  useHuntSocket(true);
 
   useEffect(() => {
     void (async () => {
@@ -31,7 +29,7 @@ export default function LobbyScreen() {
 
   const q = useQuery({
     queryKey: ["huntState"],
-    queryFn: apiMeState,
+    queryFn: ({ signal }) => apiMeState(signal),
   });
 
   useRedirectOnHuntLoadFailure(q);
@@ -82,7 +80,7 @@ export default function LobbyScreen() {
       <Pressable
         style={[styles.btn, !canEnter && styles.btnDisabled]}
         disabled={!canEnter}
-        onPress={() => router.replace("/hunt")}
+        onPress={() => router.push("/hunt")}
       >
         <Text style={styles.btnText}>{canEnter ? "Enter hunt" : "Wait for start"}</Text>
       </Pressable>

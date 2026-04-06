@@ -27,6 +27,8 @@ export function emitCompletionStatus(
     teamId: string;
     challengeId: string;
     status: "approved" | "pending" | "none";
+    /** Present when status is "none" (submission removed / rejected). */
+    challengeTitle?: string;
   }
 ) {
   io.to(roomForHunt(huntId)).emit("completion:status", payload);

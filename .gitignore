@@ -13,3 +13,4 @@ apps/mobile/android/
 drizzle/meta/
 apps/mobile/google-services.json
 .env.example
+*.ipa

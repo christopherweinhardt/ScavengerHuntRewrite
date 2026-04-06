@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { HuntSocketBridge } from "@/lib/useHuntSocket";
 import { usePushRegistration } from "@/lib/usePushRegistration";
 import { useAppTheme } from "@/lib/useAppTheme";
 
@@ -22,6 +23,7 @@ function ThemedStack() {
 
   return (
     <>
+      <HuntSocketBridge />
       <StatusBar style={isDark ? "light" : "dark"} />
       <Stack
         screenOptions={{
@@ -33,7 +35,7 @@ function ThemedStack() {
       >
         <Stack.Screen name="index" options={{ title: "Join hunt" }} />
         <Stack.Screen name="lobby" options={{ title: "Lobby", headerBackVisible: true }} />
-        <Stack.Screen name="hunt" options={{ title: "Tasks", headerLeft: () => null }} />
+        <Stack.Screen name="hunt" options={{ title: "Tasks", headerBackVisible: true, headerBackButtonDisplayMode: "minimal" }} />
         <Stack.Screen
           name="capture/[challengeId]"
           options={{ title: "Capture", presentation: "fullScreenModal" }}

@@ -46,7 +46,20 @@ function pushNotifyActiveChallenge(huntId: string, dto: Challenge): void {
   notifyTeamsInHunt(huntId, {
     title: "New task",
     body: dto.title,
+    // `challenge` + challengeId: mobile refetches hunt state (same pattern as completion pushes).
     data: { type: "challenge", challengeId: dto.id },
+  });
+}
+
+function pushNotifyChallengesUpdated(
+  huntId: string,
+  title: string,
+  body: string
+): void {
+  notifyTeamsInHunt(huntId, {
+    title,
+    body,
+    data: { type: "challenges_updated" },
   });
 }
 
@@ -56,7 +69,11 @@ api.get("/public/hunts/:slug", async (c) => {
   if (!hunt) return c.json({ error: "Not found" }, 404);
   const list = await db.query.challenges.findMany({
     where: eq(challenges.huntId, hunt.id),
-    orderBy: (ch, { asc }) => [asc(ch.sortOrder), asc(ch.createdAt)],
+    orderBy: (ch, { asc, desc }) => [
+      desc(ch.isBonus),
+      asc(ch.sortOrder),
+      asc(ch.createdAt),
+    ],
   });
   return c.json({
     hunt: toHuntPublic(hunt),
@@ -110,7 +127,11 @@ authed.get("/me/state", async (c) => {
 
   const list = await db.query.challenges.findMany({
     where: eq(challenges.huntId, hunt.id),
-    orderBy: (ch, { asc }) => [asc(ch.sortOrder), asc(ch.createdAt)],
+    orderBy: (ch, { asc, desc }) => [
+      desc(ch.isBonus),
+      asc(ch.sortOrder),
+      asc(ch.createdAt),
+    ],
   });
 
   const done = await db.query.completions.findMany({
@@ -380,7 +401,11 @@ admin.get("/hunts/:huntId", async (c) => {
   });
   const chList = await db.query.challenges.findMany({
     where: eq(challenges.huntId, huntId),
-    orderBy: (ch, { asc }) => [asc(ch.sortOrder), asc(ch.createdAt)],
+    orderBy: (ch, { asc, desc }) => [
+      desc(ch.isBonus),
+      asc(ch.sortOrder),
+      asc(ch.createdAt),
+    ],
   });
   const challengeTypeById = new Map(
     chList.map((row) => [row.id, row.type as "photo" | "video"])
@@ -454,10 +479,16 @@ admin.post("/completions/:id/approve", async (c) => {
     .update(completions)
     .set({ status: "approved" })
     .where(eq(completions.id, id));
+  const challengeTitle = row.challenge.title ?? "A task";
   emitCompletionStatus(getIo(), row.team.huntId, {
     teamId: row.teamId,
     challengeId: row.challengeId,
     status: "approved",
+  });
+  notifyTeam(row.teamId, {
+    title: "Submission approved",
+    body: `Your submission for "${challengeTitle}" was approved.`,
+    data: { type: "completion_approved", challengeId: row.challengeId },
   });
   return c.json({ ok: true });
 });
@@ -477,6 +508,7 @@ admin.delete("/completions/:id", async (c) => {
     teamId,
     challengeId,
     status: "none",
+    challengeTitle,
   });
   notifyTeam(teamId, {
     title: "Submission Rejected",
@@ -645,6 +677,13 @@ admin.patch("/challenges/:id", async (c) => {
   const dto = toChallenge(row);
   emitChallengeUpsert(getIo(), row.huntId, dto);
   pushNotifyActiveChallenge(row.huntId, dto);
+  if (!dto.active) {
+    pushNotifyChallengesUpdated(
+      row.huntId,
+      "Task list updated",
+      "The hunt tasks were updated."
+    );
+  }
   return c.json({ challenge: dto });
 });
 
@@ -659,6 +698,11 @@ admin.delete("/challenges/:id", async (c) => {
     id: existing.id,
     huntId: existing.huntId,
   });
+  pushNotifyChallengesUpdated(
+    existing.huntId,
+    "Task list updated",
+    "A task was removed from your hunt."
+  );
   return c.json({ ok: true });
 });
 

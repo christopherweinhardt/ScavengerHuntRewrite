@@ -24,15 +24,18 @@ export async function setTeamId(teamId: string): Promise<void> {
   await AsyncStorage.setItem(TEAM_ID_KEY, teamId);
 }
 
-function decodeTeamIdFromToken(token: string): string | null {
+/** Sync parse of `teamId` from the team JWT (same claims the API uses). */
+export function parseTeamIdFromJwt(token: string): string | null {
   try {
     const part = token.split(".")[1];
     if (!part) return null;
     const pad = part.length % 4 === 0 ? "" : "=".repeat(4 - (part.length % 4));
     const b64 = part.replace(/-/g, "+").replace(/_/g, "/") + pad;
     const json = atob(b64);
-    const p = JSON.parse(json) as { teamId?: string };
-    return typeof p.teamId === "string" ? p.teamId : null;
+    const p = JSON.parse(json) as { teamId?: string; sub?: string };
+    if (typeof p.teamId === "string") return p.teamId;
+    if (typeof p.sub === "string") return p.sub;
+    return null;
   } catch {
     return null;
   }
@@ -43,7 +46,7 @@ export async function getTeamId(): Promise<string | null> {
   if (stored) return stored;
   const token = await AsyncStorage.getItem(TOKEN_KEY);
   if (!token) return null;
-  return decodeTeamIdFromToken(token);
+  return parseTeamIdFromJwt(token);
 }
 
 export async function clearSession(): Promise<void> {

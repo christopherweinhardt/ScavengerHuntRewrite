@@ -60,7 +60,7 @@ export const darkTheme: AppThemeColors = {
   textSecondary: "#aaaaaa",
   textMuted: "#888888",
   label: "#cccccc",
-  accent: "#213547",
+  accent: "#e94560",
   link: "#6c9cff",
   badgeBg: "#0f3460",
   badgeText: "#8ecfff",

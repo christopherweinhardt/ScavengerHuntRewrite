@@ -42,9 +42,10 @@ export type HuntStateResponse = {
   pendingChallengeIds: string[];
 };
 
-export async function apiMeState(): Promise<HuntStateResponse> {
+export async function apiMeState(signal?: AbortSignal): Promise<HuntStateResponse> {
   const r = await fetch(`${BASE()}/api/me/state`, {
     headers: { ...(await authHeaders()) },
+    signal,
   });
   if (!r.ok) throw new Error(`State ${r.status}`);
   return r.json();

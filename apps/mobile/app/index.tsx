@@ -5,10 +5,9 @@ import {
   TextInput,
   Pressable,
   StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
   Alert,
   ActivityIndicator,
+  Keyboard,
 } from "react-native";
 import { router } from "expo-router";
 import type { AppThemeColors } from "@/constants/Colors";
@@ -53,52 +52,59 @@ export default function JoinScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.wrap}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <Text style={styles.head}>Scavenger hunt</Text>
-      <Text style={styles.sub}>Enter your hunt id and team code from the organizer.</Text>
-      <Text style={styles.label}>Hunt id</Text>
-      <TextInput
-        value={slug}
-        onChangeText={setSlug}
-        autoCapitalize="none"
-        autoCorrect={false}
-        placeholder="e.g. demo"
-        placeholderTextColor={colors.placeholder}
-        style={styles.input}
-      />
-      <Text style={styles.label}>Team join code</Text>
-      <TextInput
-        value={code}
-        onChangeText={setCode}
-        autoCapitalize="characters"
-        placeholder="From your captain"
-        placeholderTextColor={colors.placeholder}
-        style={styles.input}
-      />
-      <Pressable
-        style={[styles.btn, busy && styles.btnDisabled]}
-        onPress={() => void onJoin()}
-        disabled={busy}
-      >
-        {busy ? (
-          <ActivityIndicator color={colors.onAccent} />
-        ) : (
-          <Text style={styles.btnText}>Join team</Text>
-        )}
+    <View style={styles.root}>
+      <Pressable style={styles.dismissArea} onPress={Keyboard.dismiss}>
+        <View style={styles.wrap} pointerEvents="box-none">
+          <Text style={styles.head}>Scavenger hunt</Text>
+          <Text style={styles.sub}>Enter your hunt id and team code from the organizer.</Text>
+          <Text style={styles.label}>Hunt id</Text>
+          <TextInput
+            value={slug}
+            onChangeText={setSlug}
+            autoCapitalize="none"
+            autoCorrect={false}
+            placeholder="e.g. demo"
+            placeholderTextColor={colors.placeholder}
+            style={styles.input}
+          />
+          <Text style={styles.label}>Team join code</Text>
+          <TextInput
+            value={code}
+            onChangeText={setCode}
+            autoCapitalize="characters"
+            placeholder="From your captain"
+            placeholderTextColor={colors.placeholder}
+            style={styles.input}
+          />
+          <Pressable
+            style={[styles.btn, busy && styles.btnDisabled]}
+            onPress={() => void onJoin()}
+            disabled={busy}
+          >
+            {busy ? (
+              <ActivityIndicator color={colors.onAccent} />
+            ) : (
+              <Text style={styles.btnText}>Join team</Text>
+            )}
+          </Pressable>
+        </View>
       </Pressable>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
 function createStyles(c: AppThemeColors) {
   return StyleSheet.create({
+    root: {
+      flex: 1,
+    },
+    dismissArea: {
+      flex: 1,
+    },
     wrap: {
       flex: 1,
       padding: 24,
-      justifyContent: "center",
+      justifyContent: "flex-start",
       backgroundColor: c.background,
     },
     head: {
