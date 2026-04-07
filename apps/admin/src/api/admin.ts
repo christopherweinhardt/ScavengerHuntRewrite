@@ -61,6 +61,19 @@ export function createTeam(
   );
 }
 
+export function patchTeamScore(
+  teamId: string,
+  body: Partial<{
+    scoreAdjustment: number;
+    totalScore: number;
+  }>
+) {
+  return adminFetch<{ team: AdminTeam }>(`/admin/teams/${teamId}/score`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
 export function createChallenge(
   huntId: string,
   body: {

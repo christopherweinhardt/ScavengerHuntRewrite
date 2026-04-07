@@ -14,7 +14,7 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { apiMeState } from "@/lib/api";
-import { useHuntTimer, useNow } from "@/lib/huntTimer";
+import { canSubmitChallenge, useHuntTimer, useNow } from "@/lib/huntTimer";
 import { flushUploadQueue } from "@/lib/uploadQueue";
 import { useRedirectOnHuntLoadFailure } from "@/lib/useRedirectOnHuntLoadFailure";
 import * as Session from "@/lib/session";
@@ -84,6 +84,7 @@ export default function HuntScreen() {
   }
 
   const { hunt, challenges, completedChallengeIds, pendingChallengeIds = [] } = q.data;
+  const canSubmit = canSubmitChallenge(hunt, now);
   const approved = new Set(completedChallengeIds);
   const pending = new Set(pendingChallengeIds);
   const pendingOnlyCount = pendingChallengeIds.filter((id) => !approved.has(id)).length;
@@ -147,6 +148,7 @@ export default function HuntScreen() {
                 points={c.points ?? 1}
                 approved={approved.has(c.id)}
                 pendingReview={pending.has(c.id) && !approved.has(c.id)}
+                canSubmit={canSubmit}
                 onPress={() => router.push(`/capture/${c.id}`)}
                 bonus
               />
@@ -164,6 +166,7 @@ export default function HuntScreen() {
             points={c.points ?? 1}
             approved={approved.has(c.id)}
             pendingReview={pending.has(c.id) && !approved.has(c.id)}
+            canSubmit={canSubmit}
             onPress={() => router.push(`/capture/${c.id}`)}
           />
         ))}
@@ -179,6 +182,7 @@ function TaskRow(props: {
   points: number;
   approved: boolean;
   pendingReview: boolean;
+  canSubmit: boolean;
   onPress: () => void;
   bonus?: boolean;
 }) {
@@ -198,7 +202,7 @@ function TaskRow(props: {
         props.bonus && styles.rowBonus,
       ]}
       onPress={props.onPress}
-      disabled={props.approved}
+      disabled={props.approved || !props.canSubmit}
     >
       <View style={styles.rowTop}>
         <Text style={styles.rowTitle}>{props.title}</Text>

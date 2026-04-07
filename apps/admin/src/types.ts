@@ -25,6 +25,9 @@ export type AdminTeam = {
   id: string;
   name: string;
   joinCode: string;
+  baseScore: number;
+  scoreAdjustment: number;
+  totalScore: number;
 };
 
 /** Team submission for a challenge (admin hunt detail). */

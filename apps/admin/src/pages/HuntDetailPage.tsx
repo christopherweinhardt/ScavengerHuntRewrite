@@ -16,12 +16,16 @@ export function HuntDetailPage() {
     queryKey: ["admin", "hunt", id],
     queryFn: () => api.getHuntDetail(id),
     enabled: Boolean(id),
+    refetchInterval: 5000,
+    refetchIntervalInBackground: true,
+    refetchOnReconnect: true,
   });
 
   const [huntErr, setHuntErr] = useState("");
   const [teamName, setTeamName] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [teamErr, setTeamErr] = useState("");
+  const [scoreErr, setScoreErr] = useState("");
 
   const [chTitle, setChTitle] = useState("");
   const [chDesc, setChDesc] = useState("");
@@ -69,6 +73,21 @@ export function HuntDetailPage() {
       setTeamErr("");
     },
     onError: (e: Error) => setTeamErr(e.message),
+  });
+
+  const patchTeamScore = useMutation({
+    mutationFn: ({
+      teamId,
+      totalScore,
+    }: {
+      teamId: string;
+      totalScore: number;
+    }) => api.patchTeamScore(teamId, { totalScore }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["admin", "hunt", id] });
+      setScoreErr("");
+    },
+    onError: (e: Error) => setScoreErr(e.message),
   });
 
   const addChallenge = useMutation({
@@ -240,6 +259,10 @@ export function HuntDetailPage() {
             <tr>
               <th>Name</th>
               <th>Join code</th>
+              <th>Base</th>
+              <th>Adj</th>
+              <th>Total</th>
+              <th>Score actions</th>
             </tr>
           </thead>
           <tbody>
@@ -249,10 +272,53 @@ export function HuntDetailPage() {
                 <td>
                   <code>{t.joinCode}</code>
                 </td>
+                <td>{t.baseScore}</td>
+                <td>{t.scoreAdjustment}</td>
+                <td>
+                  <strong>{t.totalScore}</strong>
+                </td>
+                <td>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-small"
+                      disabled={patchTeamScore.isPending}
+                      onClick={() => {
+                        setScoreErr("");
+                        const input = prompt(
+                          `Set score for ${t.name}`,
+                          String(t.totalScore)
+                        );
+                        if (input === null) return;
+                        const totalScore = Number(input);
+                        if (!Number.isInteger(totalScore)) {
+                          setScoreErr("Score must be an integer.");
+                          return;
+                        }
+                        patchTeamScore.mutate({ teamId: t.id, totalScore });
+                      }}
+                    >
+                      Edit score
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-danger btn-small"
+                      disabled={patchTeamScore.isPending}
+                      onClick={() => {
+                        if (confirm(`Remove ${t.name}'s score (set to 0)?`)) {
+                          patchTeamScore.mutate({ teamId: t.id, totalScore: 0 });
+                        }
+                      }}
+                    >
+                      Remove score
+                    </button>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
+        {scoreErr ? <p className="error">{scoreErr}</p> : null}
         <form
           style={{ marginTop: 16 }}
           onSubmit={(e) => {

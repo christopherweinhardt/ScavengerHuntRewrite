@@ -410,6 +410,7 @@ admin.get("/hunts/:huntId", async (c) => {
   const challengeTypeById = new Map(
     chList.map((row) => [row.id, row.type as "photo" | "video"])
   );
+  const challengePointsById = new Map(chList.map((row) => [row.id, row.points ?? 0]));
   let submissions: Array<{
     id: string;
     challengeId: string;
@@ -420,6 +421,7 @@ admin.get("/hunts/:huntId", async (c) => {
     status: "pending" | "approved";
     viewUrl: string | null;
   }> = [];
+  const baseScoreByTeamId = new Map<string, number>();
   if (chList.length > 0) {
     const challengeIds = chList.map((x) => x.id);
     const compRows = await db.query.completions.findMany({
@@ -452,6 +454,11 @@ admin.get("/hunts/:huntId", async (c) => {
     submissions = built.filter(
       (x): x is NonNullable<(typeof built)[number]> => x !== null
     );
+    for (const row of compRows) {
+      if (row.status !== "approved") continue;
+      const points = challengePointsById.get(row.challengeId) ?? 0;
+      baseScoreByTeamId.set(row.teamId, (baseScoreByTeamId.get(row.teamId) ?? 0) + points);
+    }
   }
   return c.json({
     hunt: toHuntPublic(hunt),
@@ -459,6 +466,9 @@ admin.get("/hunts/:huntId", async (c) => {
       id: t.id,
       name: t.name,
       joinCode: t.joinCode,
+      baseScore: baseScoreByTeamId.get(t.id) ?? 0,
+      scoreAdjustment: t.scoreAdjustment ?? 0,
+      totalScore: (baseScoreByTeamId.get(t.id) ?? 0) + (t.scoreAdjustment ?? 0),
     })),
     challenges: chList.map(toChallenge),
     submissions,
@@ -559,9 +569,63 @@ admin.post("/hunts/:huntId/teams", async (c) => {
       huntId: hunt.id,
       name: body.data.name,
       joinCode: body.data.joinCode,
+      scoreAdjustment: 0,
     })
     .returning();
-  return c.json({ team: { id: team.id, name: team.name, joinCode: team.joinCode } });
+  return c.json({
+    team: {
+      id: team.id,
+      name: team.name,
+      joinCode: team.joinCode,
+      baseScore: 0,
+      scoreAdjustment: team.scoreAdjustment ?? 0,
+      totalScore: team.scoreAdjustment ?? 0,
+    },
+  });
+});
+
+admin.patch("/teams/:teamId/score", async (c) => {
+  const teamId = c.req.param("teamId");
+  const body = z
+    .object({
+      scoreAdjustment: z.number().int().optional(),
+      totalScore: z.number().int().optional(),
+    })
+    .refine((v) => v.scoreAdjustment !== undefined || v.totalScore !== undefined, {
+      message: "scoreAdjustment or totalScore is required",
+    })
+    .safeParse(await c.req.json());
+  if (!body.success) return c.json({ error: "Invalid body" }, 400);
+
+  const team = await db.query.teams.findFirst({ where: eq(teams.id, teamId) });
+  if (!team) return c.json({ error: "Team not found" }, 404);
+
+  const approved = await db.query.completions.findMany({
+    where: and(eq(completions.teamId, teamId), eq(completions.status, "approved")),
+    with: { challenge: true },
+  });
+  const baseScore = approved.reduce((sum, row) => sum + (row.challenge?.points ?? 0), 0);
+  const scoreAdjustment =
+    body.data.scoreAdjustment ??
+    ((body.data.totalScore as number) - baseScore);
+
+  const [updated] = await db
+    .update(teams)
+    .set({ scoreAdjustment })
+    .where(eq(teams.id, teamId))
+    .returning();
+  if (!updated) return c.json({ error: "Team not found" }, 404);
+
+  return c.json({
+    team: {
+      id: updated.id,
+      name: updated.name,
+      joinCode: updated.joinCode,
+      baseScore,
+      scoreAdjustment: updated.scoreAdjustment,
+      totalScore: baseScore + updated.scoreAdjustment,
+    },
+  });
 });
 
 admin.post("/hunts/:huntId/challenges", async (c) => {

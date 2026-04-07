@@ -68,7 +68,12 @@
       "expo-web-browser",
       "expo-video",
       "expo-image",
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notification-icon.png"
+        }
+      ],
       [
         "expo-splash-screen",
         {

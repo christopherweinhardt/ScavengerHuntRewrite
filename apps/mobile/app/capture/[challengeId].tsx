@@ -19,6 +19,7 @@ import {
   useMicrophonePermissions,
 } from "expo-camera";
 import { apiMeState } from "@/lib/api";
+import { canSubmitChallenge, useNow } from "@/lib/huntTimer";
 import { syncCompletionIntoHuntState } from "@/lib/huntStateCache";
 import { copyToBackup } from "@/lib/backup";
 import { enqueueUpload } from "@/lib/uploadQueue";
@@ -55,6 +56,7 @@ export default function CaptureScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const qc = useQueryClient();
+  const now = useNow();
   const camRef = useRef<CameraView>(null);
   const recordWaitRef = useRef<Promise<{ uri: string } | undefined> | null>(null);
 
@@ -89,6 +91,11 @@ export default function CaptureScreen() {
 
   async function onSubmit(uri: string, kind: "photo" | "video") {
     if (!challenge || !q.data) return;
+    if (!canSubmitChallenge(q.data.hunt, now)) {
+      Alert.alert("Submissions closed", "This hunt is not accepting submissions right now.");
+      router.back();
+      return;
+    }
     const { ext, contentType } = guessMime(uri, kind);
     const huntId = q.data.hunt.id;
     setBusy(true);

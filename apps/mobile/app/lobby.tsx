@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { useEffect, useMemo } from "react";
 import * as Session from "@/lib/session";
@@ -20,6 +20,7 @@ export default function LobbyScreen() {
   const { colors } = useAppTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const now = useNow();
+  const qc = useQueryClient();
 
   useEffect(() => {
     void (async () => {
@@ -30,6 +31,7 @@ export default function LobbyScreen() {
   const q = useQuery({
     queryKey: ["huntState"],
     queryFn: ({ signal }) => apiMeState(signal),
+    refetchOnMount: "always",
   });
 
   useRedirectOnHuntLoadFailure(q);
@@ -87,6 +89,7 @@ export default function LobbyScreen() {
       <Pressable
         style={styles.secondary}
         onPress={async () => {
+          qc.removeQueries({ queryKey: ["huntState"] });
           await unregisterDevicePushToken();
           await Session.clearSession();
           router.replace("/");

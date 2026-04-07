@@ -49,3 +49,11 @@ export function useHuntTimer(hunt: HuntPublic | undefined, now: number): HuntTim
     };
   }, [hunt, now]);
 }
+
+export function canSubmitChallenge(hunt: HuntPublic | undefined, now: number): boolean {
+  if (!hunt) return false;
+  if (hunt.status !== "active") return false;
+  const start = new Date(hunt.startsAt).getTime();
+  const end = start + hunt.durationSeconds * 1000;
+  return now >= start && now < end;
+}

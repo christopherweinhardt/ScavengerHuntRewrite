@@ -46,6 +46,8 @@ export const teams = pgTable(
     name: text("name").notNull(),
     /** Random join secret; unique per hunt (stored plain for O(1) lookup). */
     joinCode: text("join_code").notNull(),
+    /** Manual score delta applied on top of approved challenge points. */
+    scoreAdjustment: integer("score_adjustment").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   },
   (t) => ({
