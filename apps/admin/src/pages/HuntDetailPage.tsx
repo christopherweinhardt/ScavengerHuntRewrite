@@ -1,10 +1,45 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import * as api from "@/api/admin";
 import { ImportChallengesCsv } from "@/components/ImportChallengesCsv";
 import { isoToLocalInput, localInputToIso } from "@/lib/datetime";
 import type { AdminSubmission, Challenge, HuntPublic } from "@/types";
+
+function sameChallenge(a: Challenge, b: Challenge): boolean {
+  return (
+    a.id === b.id &&
+    a.huntId === b.huntId &&
+    a.title === b.title &&
+    a.description === b.description &&
+    a.type === b.type &&
+    a.isBonus === b.isBonus &&
+    a.sortOrder === b.sortOrder &&
+    a.active === b.active &&
+    a.points === b.points
+  );
+}
+
+function sameSubmission(a: AdminSubmission, b: AdminSubmission): boolean {
+  return (
+    a.id === b.id &&
+    a.challengeId === b.challengeId &&
+    a.teamId === b.teamId &&
+    a.teamName === b.teamName &&
+    a.submittedAt === b.submittedAt &&
+    a.mediaType === b.mediaType &&
+    a.status === b.status &&
+    a.viewUrl === b.viewUrl
+  );
+}
+
+function sameList<T>(a: T[], b: T[], same: (x: T, y: T) => boolean): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (!same(a[i], b[i])) return false;
+  }
+  return true;
+}
 
 export function HuntDetailPage() {
   const { huntId } = useParams<{ huntId: string }>();
@@ -20,6 +55,8 @@ export function HuntDetailPage() {
     refetchIntervalInBackground: true,
     refetchOnReconnect: true,
   });
+  const stableChallengesRef = useRef<Challenge[]>([]);
+  const stableSubmissionsRef = useRef<AdminSubmission[]>([]);
 
   const [huntErr, setHuntErr] = useState("");
   const [teamName, setTeamName] = useState("");
@@ -157,7 +194,15 @@ export function HuntDetailPage() {
     );
   }
 
-  const { hunt, teams, challenges, submissions = [] } = data;
+  const { hunt, teams, challenges: nextChallenges, submissions: nextSubmissions = [] } = data;
+  const challenges = sameList(stableChallengesRef.current, nextChallenges, sameChallenge)
+    ? stableChallengesRef.current
+    : nextChallenges;
+  const submissions = sameList(stableSubmissionsRef.current, nextSubmissions, sameSubmission)
+    ? stableSubmissionsRef.current
+    : nextSubmissions;
+  stableChallengesRef.current = challenges;
+  stableSubmissionsRef.current = submissions;
 
   return (
     <div>
