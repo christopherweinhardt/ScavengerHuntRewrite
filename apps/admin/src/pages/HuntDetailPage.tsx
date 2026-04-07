@@ -28,8 +28,7 @@ function sameSubmission(a: AdminSubmission, b: AdminSubmission): boolean {
     a.teamName === b.teamName &&
     a.submittedAt === b.submittedAt &&
     a.mediaType === b.mediaType &&
-    a.status === b.status &&
-    a.viewUrl === b.viewUrl
+    a.status === b.status
   );
 }
 
@@ -39,6 +38,19 @@ function sameList<T>(a: T[], b: T[], same: (x: T, y: T) => boolean): boolean {
     if (!same(a[i], b[i])) return false;
   }
   return true;
+}
+
+function preserveSubmissionViewUrls(
+  prev: AdminSubmission[],
+  next: AdminSubmission[]
+): AdminSubmission[] {
+  const prevById = new Map(prev.map((s) => [s.id, s]));
+  return next.map((s) => {
+    const old = prevById.get(s.id);
+    if (!old) return s;
+    if (!sameSubmission(old, s)) return s;
+    return { ...s, viewUrl: old.viewUrl };
+  });
 }
 
 export function HuntDetailPage() {
@@ -198,9 +210,17 @@ export function HuntDetailPage() {
   const challenges = sameList(stableChallengesRef.current, nextChallenges, sameChallenge)
     ? stableChallengesRef.current
     : nextChallenges;
-  const submissions = sameList(stableSubmissionsRef.current, nextSubmissions, sameSubmission)
+  const nextSubmissionsStableUrl = preserveSubmissionViewUrls(
+    stableSubmissionsRef.current,
+    nextSubmissions
+  );
+  const submissions = sameList(
+    stableSubmissionsRef.current,
+    nextSubmissionsStableUrl,
+    sameSubmission
+  )
     ? stableSubmissionsRef.current
-    : nextSubmissions;
+    : nextSubmissionsStableUrl;
   stableChallengesRef.current = challenges;
   stableSubmissionsRef.current = submissions;
 
