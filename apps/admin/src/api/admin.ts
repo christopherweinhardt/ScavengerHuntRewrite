@@ -61,6 +61,12 @@ export function createTeam(
   );
 }
 
+export function deleteTeam(huntId: string, teamId: string) {
+  return adminFetch<{ ok: boolean }>(`/admin/hunts/${huntId}/teams/${teamId}`, {
+    method: "DELETE",
+  });
+}
+
 export function patchTeamScore(
   teamId: string,
   body: Partial<{

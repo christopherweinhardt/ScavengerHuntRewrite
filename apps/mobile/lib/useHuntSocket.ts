@@ -1,11 +1,14 @@
 import type { Challenge, HuntPublic } from "@scavenger/types";
 import { useQueryClient } from "@tanstack/react-query";
-import { usePathname } from "expo-router";
+import { router, usePathname } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
+import { Alert } from "react-native";
 import { getApiBaseUrl } from "./config";
 import { syncCompletionIntoHuntState } from "./huntStateCache";
 import { showSubmissionRejectedAlert } from "./rejectionNotify";
+import { unregisterDevicePushToken } from "./api";
+import * as Session from "./session";
 import { getTeamId, getToken, parseTeamIdFromJwt } from "./session";
 import type { HuntStateResponse } from "./api";
 
@@ -83,6 +86,15 @@ export function useHuntSocket(enabled: boolean): void {
             ? { ...old, hunt: h, pendingChallengeIds: old.pendingChallengeIds ?? [] }
             : old
         );
+      });
+
+      socket.on("team:kicked", () => {
+        void (async () => {
+          await unregisterDevicePushToken();
+          await Session.clearSession();
+          Alert.alert("Removed from hunt", "An admin removed your team from this hunt.");
+          router.replace("/");
+        })();
       });
 
       const myTeamIdFromJwt = parseTeamIdFromJwt(token);

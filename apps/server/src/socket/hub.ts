@@ -19,6 +19,10 @@ export function emitHuntMeta(io: HuntIo, huntId: string, hunt: HuntPublic) {
   io.to(roomForHunt(huntId)).emit("hunt:meta", hunt);
 }
 
+export function emitTeamKicked(io: HuntIo, teamId: string): void {
+  io.to(roomForTeam(teamId)).emit("team:kicked", { teamId });
+}
+
 /** Tell clients to refresh completion state (approval, rejection). */
 export function emitCompletionStatus(
   io: HuntIo,
@@ -36,4 +40,8 @@ export function emitCompletionStatus(
 
 export function roomForHunt(huntId: string): string {
   return `hunt:${huntId}`;
+}
+
+export function roomForTeam(teamId: string): string {
+  return `team:${teamId}`;
 }

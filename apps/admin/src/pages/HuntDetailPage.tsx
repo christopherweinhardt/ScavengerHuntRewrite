@@ -90,6 +90,16 @@ export function HuntDetailPage() {
     onError: (e: Error) => setScoreErr(e.message),
   });
 
+  const removeTeam = useMutation({
+    mutationFn: (teamId: string) => api.deleteTeam(id, teamId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["admin", "hunt", id] });
+      setTeamErr("");
+      setScoreErr("");
+    },
+    onError: (e: Error) => setTeamErr(e.message),
+  });
+
   const addChallenge = useMutation({
     mutationFn: () =>
       api.createChallenge(id, {
@@ -282,7 +292,7 @@ export function HuntDetailPage() {
                     <button
                       type="button"
                       className="btn btn-secondary btn-small"
-                      disabled={patchTeamScore.isPending}
+                      disabled={patchTeamScore.isPending || removeTeam.isPending}
                       onClick={() => {
                         setScoreErr("");
                         const input = prompt(
@@ -303,7 +313,7 @@ export function HuntDetailPage() {
                     <button
                       type="button"
                       className="btn btn-danger btn-small"
-                      disabled={patchTeamScore.isPending}
+                      disabled={patchTeamScore.isPending || removeTeam.isPending}
                       onClick={() => {
                         if (confirm(`Remove ${t.name}'s score (set to 0)?`)) {
                           patchTeamScore.mutate({ teamId: t.id, totalScore: 0 });
@@ -311,6 +321,22 @@ export function HuntDetailPage() {
                       }}
                     >
                       Remove score
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-danger btn-small"
+                      disabled={patchTeamScore.isPending || removeTeam.isPending}
+                      onClick={() => {
+                        if (
+                          confirm(
+                            `Kick team "${t.name}" from this hunt? They will be signed out immediately.`
+                          )
+                        ) {
+                          removeTeam.mutate(t.id);
+                        }
+                      }}
+                    >
+                      {removeTeam.isPending ? "Kicking…" : "Kick team"}
                     </button>
                   </div>
                 </td>

@@ -28,6 +28,8 @@ import {
   emitChallengeUpsert,
   emitCompletionStatus,
   emitHuntMeta,
+  emitTeamKicked,
+  roomForTeam,
 } from "../socket/hub.js";
 
 const api = new Hono();
@@ -582,6 +584,20 @@ admin.post("/hunts/:huntId/teams", async (c) => {
       totalScore: team.scoreAdjustment ?? 0,
     },
   });
+});
+
+admin.delete("/hunts/:huntId/teams/:teamId", async (c) => {
+  const huntId = c.req.param("huntId");
+  const teamId = c.req.param("teamId");
+  const team = await db.query.teams.findFirst({
+    where: and(eq(teams.id, teamId), eq(teams.huntId, huntId)),
+  });
+  if (!team) return c.json({ error: "Team not found" }, 404);
+
+  emitTeamKicked(getIo(), teamId);
+  getIo().in(roomForTeam(teamId)).disconnectSockets(true);
+  await db.delete(teams).where(eq(teams.id, teamId));
+  return c.json({ ok: true });
 });
 
 admin.patch("/teams/:teamId/score", async (c) => {

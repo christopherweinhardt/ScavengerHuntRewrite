@@ -3,6 +3,9 @@ import { verify } from "hono/jwt";
 import type { TeamJwtPayload } from "@scavenger/types";
 import { teamJwtPayloadSchema } from "@scavenger/types";
 import { config } from "../config.js";
+import { db } from "../db/index.js";
+import { teams } from "../db/schema.js";
+import { and, eq } from "drizzle-orm";
 
 type TeamVars = { team: TeamJwtPayload };
 
@@ -42,6 +45,12 @@ export function authTeam(): MiddlewareHandler<{ Variables: TeamVars }> {
     }
     try {
       const team = await verifyTeamJwt(token);
+      const exists = await db.query.teams.findFirst({
+        where: and(eq(teams.id, team.teamId), eq(teams.huntId, team.huntId)),
+      });
+      if (!exists) {
+        return c.json({ error: "Invalid token" }, 401);
+      }
       c.set("team", team);
     } catch {
       return c.json({ error: "Invalid token" }, 401);
